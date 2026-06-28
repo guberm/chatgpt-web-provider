@@ -19,3 +19,19 @@ Requests included:
 - `POST /v1/chat/completions` non-stream
 - `POST /v1/chat/completions` stream SSE
 - `POST /v1/responses`
+
+## Starting a fresh ChatGPT session
+
+For the browser backend, requests normally continue whatever ChatGPT conversation the browser worker is on. To force a fresh ChatGPT conversation, use either:
+
+```json
+"new_session": true
+```
+
+in the request body, or this header:
+
+```http
+X-New-Session: true
+```
+
+The collection includes `Chat Completions - new session` as a ready-to-run example.

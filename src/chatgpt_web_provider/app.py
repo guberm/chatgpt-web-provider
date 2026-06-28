@@ -33,6 +33,8 @@ def _require_auth(settings: Settings):
     return dep
 
 
+def _truthy_header(value: str | None) -> bool:
+    return bool(value and value.strip().lower() in {"1", "true", "yes", "on"})
 
 
 async def _run_with_queue(settings: Settings, queue_sem: asyncio.Semaphore, operation):
@@ -115,12 +117,13 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         }
 
     @app.post("/v1/chat/completions")
-    async def chat_completions(req: ChatCompletionRequest, _token: str = Depends(auth)):
+    async def chat_completions(req: ChatCompletionRequest, x_new_session: Optional[str] = Header(default=None, alias="X-New-Session"), _token: str = Depends(auth)):
         started = int(time.time())
+        new_session = req.new_session or _truthy_header(x_new_session)
         result = await _run_with_queue(
             settings,
             queue_sem,
-            lambda: backend.complete(req.messages, model=req.model or settings.model_id),
+            lambda: backend.complete(req.messages, model=req.model or settings.model_id, new_session=new_session),
         )
         response_id = f"chatcmpl-{uuid.uuid4().hex}"
         usage = {
@@ -146,15 +149,16 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         }
 
     @app.post("/v1/responses")
-    async def responses(req: ResponsesRequest, _token: str = Depends(auth)):
+    async def responses(req: ResponsesRequest, x_new_session: Optional[str] = Header(default=None, alias="X-New-Session"), _token: str = Depends(auth)):
         if req.stream:
             raise HTTPException(status_code=501, detail="streaming is not implemented yet")
         messages = _responses_input_to_messages(req.input)
         started = int(time.time())
+        new_session = req.new_session or _truthy_header(x_new_session)
         result = await _run_with_queue(
             settings,
             queue_sem,
-            lambda: backend.complete(messages, model=req.model or settings.model_id),
+            lambda: backend.complete(messages, model=req.model or settings.model_id, new_session=new_session),
         )
         response_id = f"resp_{uuid.uuid4().hex}"
         return {

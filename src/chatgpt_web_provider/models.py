@@ -19,6 +19,7 @@ class ChatCompletionRequest(BaseModel):
     temperature: float | None = None
     max_tokens: int | None = None
     stream: bool = False
+    new_session: bool = False
 
 
 class ResponsesRequest(BaseModel):
@@ -27,6 +28,7 @@ class ResponsesRequest(BaseModel):
     temperature: float | None = None
     max_output_tokens: int | None = None
     stream: bool = False
+    new_session: bool = False
 
 
 class CompletionResult(BaseModel):

@@ -113,7 +113,7 @@ class SlowBackend(Backend):
         self.active = 0
         self.max_active = 0
 
-    async def complete(self, messages: list[ChatMessage], model: str | None = None) -> CompletionResult:
+    async def complete(self, messages: list[ChatMessage], model: str | None = None, new_session: bool = False) -> CompletionResult:
         self.active += 1
         self.max_active = max(self.max_active, self.active)
         await asyncio.sleep(0.05)
@@ -137,3 +137,38 @@ def test_requests_are_queued_by_default():
         assert backend.max_active == 1
 
     asyncio.run(run())
+
+
+class SessionRecordingBackend(Backend):
+    def __init__(self, settings: Settings):
+        super().__init__(settings)
+        self.new_session_values: list[bool] = []
+
+    async def complete(self, messages: list[ChatMessage], model: str | None = None, new_session: bool = False) -> CompletionResult:
+        self.new_session_values.append(new_session)
+        return CompletionResult(text="ok", model=model or self.settings.model_id)
+
+
+def test_chat_completions_can_request_new_session_via_body_or_header():
+    settings = Settings(api_keys=["test-token"], backend="mock")
+    backend = SessionRecordingBackend(settings)
+    app = create_app(settings, backend=backend)
+    client = TestClient(app)
+    payload = {"model": "chatgpt-5.5-high-web", "messages": [{"role": "user", "content": "hi"}]}
+
+    assert client.post("/v1/chat/completions", json={**payload, "new_session": True}, headers={"Authorization": "Bearer test-token"}).status_code == 200
+    assert client.post("/v1/chat/completions", json=payload, headers={"Authorization": "Bearer test-token", "X-New-Session": "true"}).status_code == 200
+
+    assert backend.new_session_values == [True, True]
+
+
+def test_responses_can_request_new_session_via_body_or_header():
+    settings = Settings(api_keys=["test-token"], backend="mock")
+    backend = SessionRecordingBackend(settings)
+    app = create_app(settings, backend=backend)
+    client = TestClient(app)
+
+    assert client.post("/v1/responses", json={"model": "chatgpt-5.5-high-web", "input": "hi", "new_session": True}, headers={"Authorization": "Bearer test-token"}).status_code == 200
+    assert client.post("/v1/responses", json={"model": "chatgpt-5.5-high-web", "input": "hi"}, headers={"Authorization": "Bearer test-token", "X-New-Session": "1"}).status_code == 200
+
+    assert backend.new_session_values == [True, True]

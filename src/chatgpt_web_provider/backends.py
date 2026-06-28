@@ -13,7 +13,7 @@ class Backend(ABC):
         self.settings = settings
 
     @abstractmethod
-    async def complete(self, messages: list[ChatMessage], model: str | None = None) -> CompletionResult:
+    async def complete(self, messages: list[ChatMessage], model: str | None = None, new_session: bool = False) -> CompletionResult:
         raise NotImplementedError
 
     async def health(self) -> dict:
@@ -21,7 +21,7 @@ class Backend(ABC):
 
 
 class MockBackend(Backend):
-    async def complete(self, messages: list[ChatMessage], model: str | None = None) -> CompletionResult:
+    async def complete(self, messages: list[ChatMessage], model: str | None = None, new_session: bool = False) -> CompletionResult:
         last_user = next((m.text() for m in reversed(messages) if m.role == "user"), "")
         text = f"[mock:{self.settings.model_id}] {last_user}"
         return CompletionResult(text=text, model=model or self.settings.model_id, prompt_tokens=sum(len(m.text().split()) for m in messages), completion_tokens=len(text.split()))
@@ -62,12 +62,14 @@ class BrowserBackend(Backend):
         await self._page.goto("https://chatgpt.com/", wait_until="domcontentloaded", timeout=60_000)
         return self._page
 
-    async def complete(self, messages: list[ChatMessage], model: str | None = None) -> CompletionResult:
+    async def complete(self, messages: list[ChatMessage], model: str | None = None, new_session: bool = False) -> CompletionResult:
         async with self._lock:
             page = await self._ensure_page()
             prompt = self._render_prompt(messages)
             if "log in" in (await page.title()).lower():
                 raise RuntimeError("ChatGPT browser profile is not logged in; run setup with a visible browser first")
+            if new_session:
+                await self._start_new_session(page)
 
             composer = page.locator("#prompt-textarea, div[contenteditable='true']").last
             await composer.wait_for(timeout=30_000)
@@ -100,6 +102,28 @@ class BrowserBackend(Backend):
             except Exception:
                 return
             await page.wait_for_timeout(1000)
+
+    @staticmethod
+    async def _start_new_session(page) -> None:  # pragma: no cover - browser integration
+        """Move ChatGPT to a fresh conversation before sending the prompt."""
+        await page.goto("https://chatgpt.com/", wait_until="domcontentloaded", timeout=60_000)
+        await page.wait_for_timeout(1500)
+        if await page.locator("#prompt-textarea, div[contenteditable='true']").count() > 0:
+            return
+        for selector in (
+            "[data-testid='create-new-chat-button']",
+            "button[aria-label*='New chat']",
+            "a[aria-label*='New chat']",
+            "a[href='/']",
+        ):
+            candidate = page.locator(selector).first
+            try:
+                if await candidate.count() > 0:
+                    await candidate.click(timeout=5_000)
+                    await page.wait_for_timeout(1500)
+                    return
+            except Exception:
+                continue
 
     @staticmethod
     async def _extract_last_answer(page) -> str:  # pragma: no cover - browser integration
