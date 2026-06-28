@@ -1,0 +1,312 @@
+{
+  "info": {
+    "_postman_id": "cf514953-5973-4d95-bbbd-56a48e5246f7",
+    "name": "ChatGPT Web Provider / codex.guber.dev",
+    "description": "OpenAI-compatible API facade for chatgpt-web-provider. Import this collection with the template/local environment. Public files do not contain live secrets.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://codex.guber.dev",
+      "type": "string"
+    },
+    {
+      "key": "model",
+      "value": "chatgpt-5.5-high-web",
+      "type": "string"
+    },
+    {
+      "key": "user_agent",
+      "value": "PostmanRuntime/7.45.0",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "User-Agent",
+            "value": "{{user_agent}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "health"
+          ]
+        },
+        "description": "GET /health"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+              "pm.test('health ok', function () { pm.expect(pm.response.json().ok).to.eql(true); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Models",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{api_key}}",
+            "type": "text"
+          },
+          {
+            "key": "User-Agent",
+            "value": "{{user_agent}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/v1/models",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "v1",
+            "models"
+          ]
+        },
+        "description": "GET /v1/models"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+              "pm.test('model is present', function () { pm.expect(pm.response.json().data[0].id).to.eql(pm.environment.get('model')); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Provider Status",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{api_key}}",
+            "type": "text"
+          },
+          {
+            "key": "User-Agent",
+            "value": "{{user_agent}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/v1/provider/status",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "v1",
+            "provider",
+            "status"
+          ]
+        },
+        "description": "GET /v1/provider/status"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+              "pm.test('backend visible', function () { pm.expect(pm.response.json()).to.have.property('backend'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chat Completions - non-stream",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{api_key}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "User-Agent",
+            "value": "{{user_agent}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/v1/chat/completions",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "v1",
+            "chat",
+            "completions"
+          ]
+        },
+        "description": "POST /v1/chat/completions",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"model\": \"{{model}}\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Reply concisely.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Say exactly: pong\"\n    }\n  ],\n  \"stream\": false\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+              "pm.test('chat completion shape', function () { const j = pm.response.json(); pm.expect(j.object).to.eql('chat.completion'); pm.expect(j.choices[0].message.content).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chat Completions - stream SSE",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{api_key}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "User-Agent",
+            "value": "{{user_agent}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/v1/chat/completions",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "v1",
+            "chat",
+            "completions"
+          ]
+        },
+        "description": "POST /v1/chat/completions",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"model\": \"{{model}}\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Say exactly: streamed pong\"\n    }\n  ],\n  \"stream\": true\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+              "pm.test('SSE has DONE marker', function () { pm.expect(pm.response.text()).to.include('data: [DONE]'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Responses API",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{api_key}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "User-Agent",
+            "value": "{{user_agent}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/v1/responses",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "v1",
+            "responses"
+          ]
+        },
+        "description": "POST /v1/responses",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"model\": \"{{model}}\",\n  \"input\": \"Say exactly: pong\",\n  \"stream\": false\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+              "pm.test('responses shape', function () { const j = pm.response.json(); pm.expect(j.object).to.eql('response'); pm.expect(j.output_text).to.be.a('string'); });"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
