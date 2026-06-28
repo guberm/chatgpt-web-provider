@@ -35,3 +35,6 @@ X-New-Session: true
 ```
 
 The collection includes `Chat Completions - new session` as a ready-to-run example.
+
+
+For full browser-backend setup notes, headed-vs-headless behavior, Cloudflare `Just a moment...` troubleshooting, and curl examples, see the top-level `README.md`.
