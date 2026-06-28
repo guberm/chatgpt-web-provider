@@ -1,0 +1,16 @@
+# Example systemd user unit.
+# Copy to ~/.config/systemd/user/chatgpt-web-provider.service and edit paths/env.
+[Unit]
+Description=chatgpt-web-provider API
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/github/chatgpt-web-provider
+EnvironmentFile=%h/.config/chatgpt-web-provider/env
+ExecStart=%h/github/chatgpt-web-provider/.venv/bin/uvicorn chatgpt_web_provider.app:create_app --factory --host 127.0.0.1 --port 8791
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

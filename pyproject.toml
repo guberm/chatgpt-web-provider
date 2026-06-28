@@ -1,0 +1,29 @@
+[project]
+name = "chatgpt-web-provider"
+version = "0.1.0"
+description = "OpenAI-compatible local API facade backed by a browser-controlled ChatGPT.com worker."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Michael Guber" }]
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.27",
+  "pydantic>=2",
+  "playwright>=1.40",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "httpx>=0.27"]
+
+[project.scripts]
+chatgpt-web-provider = "chatgpt_web_provider.app:main"
+chatgpt-web-provider-browser-setup = "chatgpt_web_provider.browser_setup:main"
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
