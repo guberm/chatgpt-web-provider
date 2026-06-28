@@ -84,13 +84,18 @@ def test_responses_endpoint_returns_openai_responses_like_shape(client):
     assert "hello" in data["output_text"]
 
 
-def test_streaming_is_explicitly_not_implemented_yet(client):
+def test_chat_completions_stream_returns_openai_sse_chunks(client):
     r = client.post(
         "/v1/chat/completions",
         json={"model": "chatgpt-5.5-high-web", "messages": [{"role": "user", "content": "hi"}], "stream": True},
         headers={"Authorization": "Bearer test-token"},
     )
-    assert r.status_code == 501
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/event-stream")
+    body = r.text
+    assert "chat.completion.chunk" in body
+    assert "[mock:chatgpt-5.5-high-web] hi" in body
+    assert "data: [DONE]" in body
 
 
 class SlowBackend(Backend):

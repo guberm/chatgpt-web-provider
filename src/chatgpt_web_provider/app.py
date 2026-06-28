@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 import uuid
 from typing import Optional
 
 import uvicorn
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from .backends import Backend, build_backend
 from .config import Settings
@@ -38,6 +39,27 @@ async def _run_with_queue(settings: Settings, queue_sem: asyncio.Semaphore, oper
     except TimeoutError as exc:
         raise HTTPException(status_code=504, detail="request timed out while waiting for provider queue") from exc
 
+
+
+async def _chat_completion_stream(response_id: str, created: int, model: str, text: str, usage: dict):
+    first = {
+        "id": response_id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model,
+        "choices": [{"index": 0, "delta": {"role": "assistant", "content": text}, "finish_reason": None}],
+    }
+    final = {
+        "id": response_id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model,
+        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+        "usage": usage,
+    }
+    yield f"data: {json.dumps(first, ensure_ascii=False)}\n\n"
+    yield f"data: {json.dumps(final, ensure_ascii=False)}\n\n"
+    yield "data: [DONE]\n\n"
 
 
 def create_app(settings: Settings | None = None, backend: Backend | None = None) -> FastAPI:
@@ -90,27 +112,33 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
 
     @app.post("/v1/chat/completions")
     async def chat_completions(req: ChatCompletionRequest, _token: str = Depends(auth)):
-        if req.stream:
-            raise HTTPException(status_code=501, detail="streaming is not implemented yet")
         started = int(time.time())
         result = await _run_with_queue(
             settings,
             queue_sem,
             lambda: backend.complete(req.messages, model=req.model or settings.model_id),
         )
+        response_id = f"chatcmpl-{uuid.uuid4().hex}"
+        usage = {
+            "prompt_tokens": result.prompt_tokens,
+            "completion_tokens": result.completion_tokens,
+            "total_tokens": result.prompt_tokens + result.completion_tokens,
+        }
+        if req.stream:
+            return StreamingResponse(
+                _chat_completion_stream(response_id, started, result.model, result.text, usage),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
         return {
-            "id": f"chatcmpl-{uuid.uuid4().hex}",
+            "id": response_id,
             "object": "chat.completion",
             "created": started,
             "model": result.model,
             "choices": [
                 {"index": 0, "message": {"role": "assistant", "content": result.text}, "finish_reason": "stop"}
             ],
-            "usage": {
-                "prompt_tokens": result.prompt_tokens,
-                "completion_tokens": result.completion_tokens,
-                "total_tokens": result.prompt_tokens + result.completion_tokens,
-            },
+            "usage": usage,
         }
 
     @app.post("/v1/responses")
