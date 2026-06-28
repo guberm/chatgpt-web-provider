@@ -42,6 +42,15 @@ def test_models_accepts_x_api_key_header(client):
     assert r.json()["data"][0]["id"] == "chatgpt-5.5-high-web"
 
 
+def test_auth_uses_valid_bearer_when_x_api_key_placeholder_is_unresolved(client):
+    r = client.get(
+        "/v1/models",
+        headers={"X-API-Key": "{{api_key}}", "Authorization": "Bearer test-token"},
+    )
+    assert r.status_code == 200
+    assert r.json()["data"][0]["id"] == "chatgpt-5.5-high-web"
+
+
 def test_provider_status_requires_auth_and_reports_queue(client):
     assert client.get("/v1/provider/status").status_code == 401
     r = client.get("/v1/provider/status", headers={"Authorization": "Bearer test-token"})

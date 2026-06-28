@@ -18,14 +18,18 @@ from .security import redact_secret
 
 def _require_auth(settings: Settings):
     async def dep(authorization: Optional[str] = Header(default=None), x_api_key: Optional[str] = Header(default=None, alias="X-API-Key")) -> str:
-        token = x_api_key
-        if token is None:
-            if not authorization or not authorization.lower().startswith("bearer "):
-                raise HTTPException(status_code=401, detail="missing bearer token")
-            token = authorization.split(" ", 1)[1].strip()
-        if token not in settings.api_keys:
-            raise HTTPException(status_code=403, detail="invalid bearer token")
-        return token
+        candidates: list[str] = []
+        if x_api_key and x_api_key.strip() and not x_api_key.strip().startswith("{{"):
+            candidates.append(x_api_key.strip())
+        if authorization and authorization.lower().startswith("bearer "):
+            candidates.append(authorization.split(" ", 1)[1].strip())
+
+        if not candidates:
+            raise HTTPException(status_code=401, detail="missing bearer token")
+        for token in candidates:
+            if token in settings.api_keys:
+                return token
+        raise HTTPException(status_code=403, detail="invalid bearer token")
     return dep
 
 
