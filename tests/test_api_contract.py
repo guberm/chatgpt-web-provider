@@ -113,7 +113,7 @@ class SlowBackend(Backend):
         self.active = 0
         self.max_active = 0
 
-    async def complete(self, messages: list[ChatMessage], model: str | None = None, new_session: bool = False) -> CompletionResult:
+    async def complete(self, messages: list[ChatMessage], model: str | None = None, new_session: bool = False, level: str | None = None) -> CompletionResult:
         self.active += 1
         self.max_active = max(self.max_active, self.active)
         await asyncio.sleep(0.05)
@@ -144,7 +144,7 @@ class SessionRecordingBackend(Backend):
         super().__init__(settings)
         self.new_session_values: list[bool] = []
 
-    async def complete(self, messages: list[ChatMessage], model: str | None = None, new_session: bool = False) -> CompletionResult:
+    async def complete(self, messages: list[ChatMessage], model: str | None = None, new_session: bool = False, level: str | None = None) -> CompletionResult:
         self.new_session_values.append(new_session)
         return CompletionResult(text="ok", model=model or self.settings.model_id)
 
@@ -172,3 +172,68 @@ def test_responses_can_request_new_session_via_body_or_header():
     assert client.post("/v1/responses", json={"model": "chatgpt-5.5-high-web", "input": "hi"}, headers={"Authorization": "Bearer test-token", "X-New-Session": "1"}).status_code == 200
 
     assert backend.new_session_values == [True, True]
+
+def test_models_lists_all_configured_models_and_capabilities_lists_levels():
+    settings = Settings(
+        api_keys=["test-token"],
+        backend="mock",
+        model_id="gpt-a",
+        available_models=["gpt-a", "gpt-b"],
+        model_labels={"gpt-a": "GPT A", "gpt-b": "GPT B"},
+        available_levels=["auto", "high"],
+        level_labels={"auto": "Auto", "high": "High"},
+    )
+    client = TestClient(create_app(settings))
+    headers = {"Authorization": "Bearer test-token"}
+
+    models = client.get("/v1/models", headers=headers).json()["data"]
+    assert [m["id"] for m in models] == ["gpt-a", "gpt-b"]
+    assert models[0]["display_name"] == "GPT A"
+    assert models[0]["default"] is True
+
+    caps = client.get("/v1/provider/capabilities", headers=headers).json()
+    assert [m["id"] for m in caps["models"]] == ["gpt-a", "gpt-b"]
+    assert [l["id"] for l in caps["levels"]] == ["auto", "high"]
+    assert caps["new_session"]["header"] == "X-New-Session"
+
+
+def test_chat_completions_validates_model_and_level():
+    settings = Settings(api_keys=["test-token"], backend="mock", model_id="gpt-a", available_models=["gpt-a"], available_levels=["auto", "high"])
+    client = TestClient(create_app(settings))
+    headers = {"Authorization": "Bearer test-token"}
+
+    bad_model = client.post("/v1/chat/completions", json={"model":"missing", "messages":[{"role":"user","content":"hi"}]}, headers=headers)
+    assert bad_model.status_code == 400
+    assert bad_model.json()["detail"]["error"] == "unsupported_model"
+
+    bad_level = client.post("/v1/chat/completions", json={"model":"gpt-a", "level":"ultra", "messages":[{"role":"user","content":"hi"}]}, headers=headers)
+    assert bad_level.status_code == 400
+    assert bad_level.json()["detail"]["error"] == "unsupported_level"
+
+
+def test_chat_completions_passes_requested_model_and_reasoning_level():
+    settings = Settings(api_keys=["test-token"], backend="mock", model_id="gpt-a", available_models=["gpt-a", "gpt-b"], available_levels=["auto", "high"])
+    client = TestClient(create_app(settings))
+    r = client.post(
+        "/v1/chat/completions",
+        json={"model":"gpt-b", "reasoning_effort":"high", "messages":[{"role":"user","content":"hi"}]},
+        headers={"Authorization":"Bearer test-token"},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["model"] == "gpt-b"
+    assert data["level"] == "high"
+
+
+def test_responses_passes_requested_model_and_level():
+    settings = Settings(api_keys=["test-token"], backend="mock", model_id="gpt-a", available_models=["gpt-a", "gpt-b"], available_levels=["auto", "high"])
+    client = TestClient(create_app(settings))
+    r = client.post(
+        "/v1/responses",
+        json={"model":"gpt-b", "level":"high", "input":"hi"},
+        headers={"Authorization":"Bearer test-token"},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["model"] == "gpt-b"
+    assert data["level"] == "high"

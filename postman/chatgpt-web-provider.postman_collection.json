@@ -20,6 +20,11 @@
       "key": "user_agent",
       "value": "PostmanRuntime/7.45.0",
       "type": "string"
+    },
+    {
+      "key": "level",
+      "value": "high",
+      "type": "string"
     }
   ],
   "item": [
@@ -94,6 +99,48 @@
             "exec": [
               "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
               "pm.test('model is present', function () { pm.expect(pm.response.json().data[0].id).to.eql(pm.environment.get('model')); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Provider Capabilities",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{api_key}}",
+            "type": "text"
+          },
+          {
+            "key": "User-Agent",
+            "value": "{{user_agent}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/v1/provider/capabilities",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "v1",
+            "provider",
+            "capabilities"
+          ]
+        },
+        "description": "GET /v1/provider/capabilities"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+              "pm.test('capabilities include models and levels', function () { const j = pm.response.json(); pm.expect(Array.isArray(j.models)).to.eql(true); pm.expect(Array.isArray(j.levels)).to.eql(true); });"
             ]
           }
         }
@@ -176,7 +223,7 @@
         "description": "POST /v1/chat/completions. Set new_session=true or header X-New-Session:true to start a fresh ChatGPT conversation.",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"model\": \"{{model}}\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Reply concisely.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Say exactly: pong\"\n    }\n  ],\n  \"stream\": false,\n  \"new_session\": false\n}",
+          "raw": "{\n  \"model\": \"{{model}}\",\n  \"level\": \"{{level}}\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Reply concisely.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Say exactly: pong\"\n    }\n  ],\n  \"stream\": false,\n  \"new_session\": false\n}",
           "options": {
             "raw": {
               "language": "json"
@@ -238,7 +285,7 @@
         "description": "Starts a fresh ChatGPT conversation before sending this prompt. Equivalent header: X-New-Session: true.",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"model\": \"{{model}}\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Reply concisely.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Say exactly: fresh-session-pong\"\n    }\n  ],\n  \"stream\": false,\n  \"new_session\": true\n}",
+          "raw": "{\n  \"model\": \"{{model}}\",\n  \"level\": \"{{level}}\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Reply concisely.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Say exactly: fresh-session-pong\"\n    }\n  ],\n  \"stream\": false,\n  \"new_session\": true\n}",
           "options": {
             "raw": {
               "language": "json"
@@ -294,7 +341,7 @@
         "description": "POST /v1/chat/completions",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"model\": \"{{model}}\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Say exactly: streamed pong\"\n    }\n  ],\n  \"stream\": true,\n  \"new_session\": false\n}",
+          "raw": "{\n  \"model\": \"{{model}}\",\n  \"level\": \"{{level}}\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Say exactly: streamed pong\"\n    }\n  ],\n  \"stream\": true,\n  \"new_session\": false\n}",
           "options": {
             "raw": {
               "language": "json"
@@ -349,7 +396,7 @@
         "description": "POST /v1/responses. Set new_session=true or header X-New-Session:true to start a fresh ChatGPT conversation.",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"model\": \"{{model}}\",\n  \"input\": \"Say exactly: pong\",\n  \"stream\": false,\n  \"new_session\": false\n}",
+          "raw": "{\n  \"model\": \"{{model}}\",\n  \"reasoning_effort\": \"{{level}}\",\n  \"input\": \"Say exactly: pong\",\n  \"stream\": false,\n  \"new_session\": false\n}",
           "options": {
             "raw": {
               "language": "json"

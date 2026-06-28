@@ -37,6 +37,23 @@ def _truthy_header(value: str | None) -> bool:
     return bool(value and value.strip().lower() in {"1", "true", "yes", "on"})
 
 
+def _request_level(req) -> str | None:
+    return getattr(req, "level", None) or getattr(req, "reasoning_effort", None)
+
+
+def _validate_requested_options(settings: Settings, model: str, level: str | None) -> None:
+    if model not in settings.available_models:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "unsupported_model", "model": model, "available_models": settings.available_models},
+        )
+    if level and level not in settings.available_levels:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "unsupported_level", "level": level, "available_levels": settings.available_levels},
+        )
+
+
 async def _run_with_queue(settings: Settings, queue_sem: asyncio.Semaphore, operation):
     try:
         async with asyncio.timeout(settings.queue_timeout_seconds):
@@ -97,8 +114,32 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         return {
             "object": "list",
             "data": [
-                {"id": settings.model_id, "object": "model", "created": 0, "owned_by": "chatgpt-web-provider"}
+                {
+                    "id": model,
+                    "object": "model",
+                    "created": 0,
+                    "owned_by": "chatgpt-web-provider",
+                    "display_name": settings.model_label(model),
+                    "default": model == settings.model_id,
+                }
+                for model in settings.available_models
             ],
+        }
+
+    @app.get("/v1/provider/capabilities")
+    async def provider_capabilities(_token: str = Depends(auth)):
+        return {
+            "backend": settings.backend,
+            "default_model": settings.model_id,
+            "models": [
+                {"id": model, "display_name": settings.model_label(model), "default": model == settings.model_id}
+                for model in settings.available_models
+            ],
+            "levels": [
+                {"id": level, "display_name": settings.level_label(level), "default": level == settings.available_levels[0]}
+                for level in settings.available_levels
+            ],
+            "new_session": {"body_field": "new_session", "header": "X-New-Session"},
         }
 
     @app.get("/v1/provider/status")
@@ -108,6 +149,8 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
         return {
             "backend": settings.backend,
             "model": settings.model_id,
+            "models": settings.available_models,
+            "levels": settings.available_levels,
             "health": health_data,
             "queue": {
                 "max_concurrent_requests": settings.max_concurrent_requests,
@@ -119,11 +162,14 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
     @app.post("/v1/chat/completions")
     async def chat_completions(req: ChatCompletionRequest, x_new_session: Optional[str] = Header(default=None, alias="X-New-Session"), _token: str = Depends(auth)):
         started = int(time.time())
+        selected_model = req.model or settings.model_id
+        selected_level = _request_level(req)
+        _validate_requested_options(settings, selected_model, selected_level)
         new_session = req.new_session or _truthy_header(x_new_session)
         result = await _run_with_queue(
             settings,
             queue_sem,
-            lambda: backend.complete(req.messages, model=req.model or settings.model_id, new_session=new_session),
+            lambda: backend.complete(req.messages, model=selected_model, new_session=new_session, level=selected_level),
         )
         response_id = f"chatcmpl-{uuid.uuid4().hex}"
         usage = {
@@ -142,6 +188,7 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
             "object": "chat.completion",
             "created": started,
             "model": result.model,
+            "level": result.level,
             "choices": [
                 {"index": 0, "message": {"role": "assistant", "content": result.text}, "finish_reason": "stop"}
             ],
@@ -154,11 +201,14 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
             raise HTTPException(status_code=501, detail="streaming is not implemented yet")
         messages = _responses_input_to_messages(req.input)
         started = int(time.time())
+        selected_model = req.model or settings.model_id
+        selected_level = _request_level(req)
+        _validate_requested_options(settings, selected_model, selected_level)
         new_session = req.new_session or _truthy_header(x_new_session)
         result = await _run_with_queue(
             settings,
             queue_sem,
-            lambda: backend.complete(messages, model=req.model or settings.model_id, new_session=new_session),
+            lambda: backend.complete(messages, model=selected_model, new_session=new_session, level=selected_level),
         )
         response_id = f"resp_{uuid.uuid4().hex}"
         return {
@@ -167,6 +217,7 @@ def create_app(settings: Settings | None = None, backend: Backend | None = None)
             "created_at": started,
             "status": "completed",
             "model": result.model,
+            "level": result.level,
             "output": [
                 {
                     "id": f"msg_{uuid.uuid4().hex}",

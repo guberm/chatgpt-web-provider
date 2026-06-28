@@ -16,6 +16,7 @@ behind the scenes.
 
 - `GET /health`
 - `GET /v1/models`
+- `GET /v1/provider/capabilities`
 - `GET /v1/provider/status`
 - `POST /v1/chat/completions`
 - `POST /v1/responses`
@@ -115,6 +116,7 @@ curl --location 'https://codex.guber.dev/v1/chat/completions' \
   --header "Authorization: Bearer $CHATGPT_WEB_API_KEY" \
   --data '{
     "model": "chatgpt-5.5-high-web",
+    "level": "high",
     "messages": [
       {"role": "system", "content": "Reply concisely."},
       {"role": "user", "content": "Say exactly: pong"}
@@ -218,7 +220,52 @@ Response includes `output_text`:
 
 Streaming for `/v1/responses` is not implemented yet.
 
-## Fresh ChatGPT sessions
+## Model and level selection
+
+The provider can advertise more than one ChatGPT model and more than one effort/level.
+
+Read the configured capabilities:
+
+```http
+GET /v1/provider/capabilities
+```
+
+Example response shape:
+
+```json
+{
+  "backend": "browser",
+  "default_model": "chatgpt-5.5-high-web",
+  "models": [
+    {"id": "chatgpt-5.5-high-web", "display_name": "GPT-5.5 High", "default": true},
+    {"id": "gpt-5.5", "display_name": "GPT-5.5", "default": false},
+    {"id": "gpt-5", "display_name": "GPT-5", "default": false},
+    {"id": "gpt-4o", "display_name": "GPT-4o", "default": false},
+    {"id": "o3", "display_name": "o3", "default": false},
+    {"id": "o4-mini", "display_name": "o4-mini", "default": false},
+    {"id": "auto", "display_name": "Auto", "default": false}
+  ],
+  "levels": [
+    {"id": "auto", "display_name": "Auto", "default": true},
+    {"id": "fast", "display_name": "Fast", "default": false},
+    {"id": "standard", "display_name": "Standard", "default": false},
+    {"id": "high", "display_name": "High", "default": false}
+  ],
+  "new_session": {"body_field": "new_session", "header": "X-New-Session"}
+}
+```
+
+Choose a model per request with `model`.
+
+Choose an effort/level with either:
+
+- `level`
+- `reasoning_effort`
+
+Both map to the same provider-side field.
+
+If the requested model or level is not in the configured allowlist, the API returns `400`.
+
 
 By default, the browser backend continues whatever ChatGPT conversation the
 browser worker is currently on.

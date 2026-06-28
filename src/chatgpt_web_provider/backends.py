@@ -13,7 +13,7 @@ class Backend(ABC):
         self.settings = settings
 
     @abstractmethod
-    async def complete(self, messages: list[ChatMessage], model: str | None = None, new_session: bool = False) -> CompletionResult:
+    async def complete(self, messages: list[ChatMessage], model: str | None = None, new_session: bool = False, level: str | None = None) -> CompletionResult:
         raise NotImplementedError
 
     async def health(self) -> dict:
@@ -21,10 +21,10 @@ class Backend(ABC):
 
 
 class MockBackend(Backend):
-    async def complete(self, messages: list[ChatMessage], model: str | None = None, new_session: bool = False) -> CompletionResult:
+    async def complete(self, messages: list[ChatMessage], model: str | None = None, new_session: bool = False, level: str | None = None) -> CompletionResult:
         last_user = next((m.text() for m in reversed(messages) if m.role == "user"), "")
         text = f"[mock:{self.settings.model_id}] {last_user}"
-        return CompletionResult(text=text, model=model or self.settings.model_id, prompt_tokens=sum(len(m.text().split()) for m in messages), completion_tokens=len(text.split()))
+        return CompletionResult(text=text, model=model or self.settings.model_id, level=level, prompt_tokens=sum(len(m.text().split()) for m in messages), completion_tokens=len(text.split()))
 
 
 class BrowserBackend(Backend):
@@ -62,7 +62,7 @@ class BrowserBackend(Backend):
         await self._page.goto("https://chatgpt.com/", wait_until="domcontentloaded", timeout=60_000)
         return self._page
 
-    async def complete(self, messages: list[ChatMessage], model: str | None = None, new_session: bool = False) -> CompletionResult:
+    async def complete(self, messages: list[ChatMessage], model: str | None = None, new_session: bool = False, level: str | None = None) -> CompletionResult:
         async with self._lock:
             page = await self._ensure_page()
             prompt = self._render_prompt(messages)
@@ -70,6 +70,7 @@ class BrowserBackend(Backend):
                 raise RuntimeError("ChatGPT browser profile is not logged in; run setup with a visible browser first")
             if new_session:
                 await self._start_new_session(page)
+            await self._apply_preferences(page, model or self.settings.model_id, level)
 
             composer = page.locator("#prompt-textarea, div[contenteditable='true']").last
             await composer.wait_for(timeout=30_000)
@@ -77,7 +78,7 @@ class BrowserBackend(Backend):
             await page.keyboard.press("Enter")
             await self._wait_until_idle(page)
             text = await self._extract_last_answer(page)
-            return CompletionResult(text=text, model=model or self.settings.model_id)
+            return CompletionResult(text=text, model=model or self.settings.model_id, level=level)
 
     async def health(self) -> dict:
         try:
@@ -86,6 +87,59 @@ class BrowserBackend(Backend):
             return {"ok": True, "backend": "browser", "title": title, "logged_in_hint": "log in" not in title.lower()}
         except Exception as exc:
             return {"ok": False, "backend": "browser", "error": str(exc)}
+
+    async def _apply_preferences(self, page, model: str, level: str | None) -> None:  # pragma: no cover - browser integration
+        """Best-effort model / reasoning-level selection in the ChatGPT UI.
+
+        ChatGPT UI changes often. Failure to locate a control is non-fatal: the
+        request still runs with the currently selected browser model, while the
+        API response records the requested model/level.
+        """
+        await self._try_select_label(page, self.settings.model_label(model))
+        if level:
+            await self._try_select_label(page, self.settings.level_label(level))
+
+    @staticmethod
+    async def _try_select_label(page, label: str) -> bool:  # pragma: no cover - browser integration
+        if not label:
+            return False
+        candidates = (
+            f"button:has-text('{label}')",
+            f"[role='button']:has-text('{label}')",
+            f"[role='menuitem']:has-text('{label}')",
+            f"text={label}",
+        )
+        # First try a direct visible option (already expanded menu or direct button).
+        for selector in candidates:
+            try:
+                loc = page.locator(selector).first
+                if await loc.count() > 0 and await loc.is_visible(timeout=1000):
+                    await loc.click(timeout=3000)
+                    await page.wait_for_timeout(500)
+                    return True
+            except Exception:
+                continue
+        # Then try common model/menu buttons and search again.
+        for opener in (
+            "[data-testid='model-switcher-dropdown-button']",
+            "button[aria-haspopup='menu']",
+            "button:has-text('ChatGPT')",
+            "button:has-text('GPT')",
+        ):
+            try:
+                button = page.locator(opener).first
+                if await button.count() > 0 and await button.is_visible(timeout=1000):
+                    await button.click(timeout=3000)
+                    await page.wait_for_timeout(700)
+                    for selector in candidates:
+                        loc = page.locator(selector).first
+                        if await loc.count() > 0 and await loc.is_visible(timeout=1000):
+                            await loc.click(timeout=3000)
+                            await page.wait_for_timeout(500)
+                            return True
+            except Exception:
+                continue
+        return False
 
     @staticmethod
     def _render_prompt(messages: list[ChatMessage]) -> str:

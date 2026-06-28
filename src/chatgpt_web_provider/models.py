@@ -20,6 +20,8 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: int | None = None
     stream: bool = False
     new_session: bool = False
+    level: str | None = None
+    reasoning_effort: str | None = None
 
 
 class ResponsesRequest(BaseModel):
@@ -29,11 +31,14 @@ class ResponsesRequest(BaseModel):
     max_output_tokens: int | None = None
     stream: bool = False
     new_session: bool = False
+    level: str | None = None
+    reasoning_effort: str | None = None
 
 
 class CompletionResult(BaseModel):
     text: str
     model: str
+    level: str | None = None
     prompt_tokens: int = 0
     completion_tokens: int = 0
 
