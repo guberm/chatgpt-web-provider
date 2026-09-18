@@ -438,6 +438,7 @@ The collection includes:
 
 - Health
 - Models
+- Provider Capabilities
 - Provider Status
 - Chat Completions - non-stream
 - Chat Completions - new session
